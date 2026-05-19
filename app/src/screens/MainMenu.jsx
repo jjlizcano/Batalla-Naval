@@ -14,10 +14,13 @@ export default function MainMenu() {
   const unlockedAchievements = useGameStore(s => s.unlockedAchievements);
   const skins = useGameStore(s => s.skins);
   const buySkin = useGameStore(s => s.buySkin);
+  const minigames = useGameStore(s => s.minigames);
+  const buyMinigame = useGameStore(s => s.buyMinigame);
   const activeSkin = useGameStore(s => s.activeSkin);
   const setActiveSkin = useGameStore(s => s.setActiveSkin);
 
   const [showCollection, setShowCollection] = useState(false);
+  const tetrisUnlocked = minigames?.some(mg => mg.id === 'tetris' && mg.unlocked);
 
   return (
     <div className="theme-classic w-full h-full flex flex-col items-center justify-center relative overflow-hidden">
@@ -87,6 +90,15 @@ export default function MainMenu() {
           accent="#00e5ff" theme="advanced" onClick={() => startMode('advanced')} />
         <ModeCard title="2 Jugadores" subtitle="Pasa el PC — mismo dispositivo"
           accent="#8b5cf6" theme="classic" onClick={() => startMode('local2p')} />
+        {tetrisUnlocked && (
+          <ModeCard
+            title="Tetris"
+            subtitle="Modo Tetris — piezas especiales, dispara cuando confirmes"
+            accent="#9cff7a"
+            theme="classic"
+            onClick={() => startMode('tetris')}
+          />
+        )}
       </motion.div>
 
       {/* Achievements strip */}
@@ -112,9 +124,9 @@ export default function MainMenu() {
       <AnimatePresence>
         {showCollection && (
           <CollectionModal
-            coins={coins} skins={skins} activeSkin={activeSkin}
+            coins={coins} skins={skins} minigames={minigames} activeSkin={activeSkin}
             achievements={ACHIEVEMENTS} unlocked={unlockedAchievements}
-            onBuy={buySkin} onSelect={setActiveSkin}
+            onBuySkin={buySkin} onBuyMinigame={buyMinigame} onSelect={setActiveSkin}
             onClose={() => setShowCollection(false)}
           />
         )}
@@ -123,13 +135,19 @@ export default function MainMenu() {
   );
 }
 
-function ModeCard({ title, subtitle, accent, theme, onClick }) {
+function ModeCard({ title, subtitle, accent, theme, onClick, disabled = false }) {
   const isAdvanced = theme === 'advanced';
   return (
-    <motion.button onClick={onClick}
+    <motion.button onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       className={`panel relative px-10 py-8 min-w-[280px] text-left overflow-hidden ${isAdvanced ? 'theme-advanced' : ''}`}
-      style={{ borderColor: accent, boxShadow: `0 0 30px ${accent}33, inset 0 0 20px ${accent}11` }}
-      whileHover={{ scale: 1.03, y: -4, boxShadow: `0 10px 40px ${accent}55` }}
+      style={{
+        borderColor: accent,
+        boxShadow: `0 0 30px ${accent}33, inset 0 0 20px ${accent}11`,
+        opacity: disabled ? 0.72 : 1,
+        cursor: disabled ? 'default' : 'pointer'
+      }}
+      whileHover={disabled ? undefined : { scale: 1.03, y: -4, boxShadow: `0 10px 40px ${accent}55` }}
       whileTap={{ scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
       <div className="text-2xl font-bold mb-2 tracking-wider"
@@ -138,12 +156,13 @@ function ModeCard({ title, subtitle, accent, theme, onClick }) {
         {title}
       </div>
       <div className="text-sm opacity-70" style={{ color: '#cbd5e1' }}>{subtitle}</div>
+      {disabled && <div className="mt-3 text-[10px] uppercase tracking-[0.3em] opacity-50">Próximamente</div>}
       {isAdvanced && <div className="scanline" />}
     </motion.button>
   );
 }
 
-function CollectionModal({ coins, skins, activeSkin, achievements, unlocked, onBuy, onSelect, onClose }) {
+function CollectionModal({ coins, skins, minigames, activeSkin, achievements, unlocked, onBuySkin, onBuyMinigame, onSelect, onClose }) {
   const [tab, setTab] = useState('skins');
   return (
     <motion.div className="fixed inset-0 z-50 flex items-center justify-center"
@@ -161,8 +180,8 @@ function CollectionModal({ coins, skins, activeSkin, achievements, unlocked, onB
           </div>
         </div>
 
-        <div className="flex gap-2 mb-4">
-          {['skins', 'logros'].map(t => (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {['skins', 'minijuegos', 'logros'].map(t => (
             <button key={t} className="btn !px-4 !py-1 text-sm capitalize"
               style={{ borderColor: tab === t ? 'var(--accent)' : 'transparent' }}
               onClick={() => setTab(t)}>{t}</button>
@@ -191,12 +210,37 @@ function CollectionModal({ coins, skins, activeSkin, achievements, unlocked, onB
                     {activeSkin === s.id ? '✓ Activo' : 'Usar'}
                   </button>
                 ) : (
-                  <button className="btn !py-0.5 text-xs" onClick={() => onBuy(s.id)}>
+                  <button className="btn !py-0.5 text-xs" onClick={() => onBuySkin(s.id)}>
                     ◈ {s.price}
                   </button>
                 )}
               </motion.div>
             ))}
+          </div>
+        )}
+
+        {tab === 'minijuegos' && (
+          <div className="flex flex-col gap-3">
+            {minigames.map(game => {
+              const unlockedGame = !!game.unlocked;
+              return (
+                <motion.div key={game.id} className="panel p-4 flex items-center justify-between gap-3"
+                  style={{ borderColor: unlockedGame ? game.accent : 'transparent' }}
+                  whileHover={{ scale: 1.01 }}>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold" style={{ color: game.accent }}>{game.name}</div>
+                    <div className="text-xs opacity-60 mt-1">{game.desc}</div>
+                  </div>
+                  {unlockedGame ? (
+                    <span className="text-xs uppercase tracking-[0.2em]" style={{ color: game.accent }}>Desbloqueado</span>
+                  ) : (
+                    <button className="btn !py-0.5 text-xs" onClick={() => onBuyMinigame(game.id)}>
+                      ◈ {game.price}
+                    </button>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         )}
 

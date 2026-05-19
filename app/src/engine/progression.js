@@ -4,6 +4,7 @@
 const K = {
   COINS:     'bn-coins',
   SKINS:     'bn-skins',
+  MINIGAMES: 'bn-minigames',
   ACHIEVS:   'bn-achievements',
   STATS:     'bn-stats'
 };
@@ -33,16 +34,29 @@ export const SHIP_SKINS = [
   { id: 'stealth', name: 'Sigilo',       price: 350, unlocked: false, colors: { base: '#0d0d0d', accent: '#444' } }
 ];
 
+export const MINIGAMES = [
+  {
+    id: 'tetris',
+    name: 'Tetris',
+    desc: 'Modo Tetris: las naves usan piezas Tetris y el disparo desciende hasta confirmación.',
+    price: 420,
+    unlocked: false,
+    accent: '#9cff7a'
+  }
+];
+
 // ──────────────────────────────────────────────────────────────
 // Load / save helpers
 // ──────────────────────────────────────────────────────────────
 export function loadProgression() {
   const coins     = parseInt(localStorage.getItem(K.COINS) || '0', 10);
   const skinIds   = JSON.parse(localStorage.getItem(K.SKINS)  || '["navy"]');
+  const minigameIds= JSON.parse(localStorage.getItem(K.MINIGAMES) || '[]');
   const achievIds = JSON.parse(localStorage.getItem(K.ACHIEVS) || '[]');
   const stats     = JSON.parse(localStorage.getItem(K.STATS)   || '{}');
   const skins = SHIP_SKINS.map(s => ({ ...s, unlocked: s.unlocked || skinIds.includes(s.id) }));
-  return { coins, skins, unlockedAchievements: achievIds, stats };
+  const minigames = MINIGAMES.map(m => ({ ...m, unlocked: m.unlocked || minigameIds.includes(m.id) }));
+  return { coins, skins, minigames, unlockedAchievements: achievIds, stats };
 }
 
 export function saveCoins(coins) {
@@ -62,6 +76,14 @@ export function unlockSkin(id) {
   if (!prev.includes(id)) {
     prev.push(id);
     localStorage.setItem(K.SKINS, JSON.stringify(prev));
+  }
+}
+
+export function unlockMinigame(id) {
+  const prev = JSON.parse(localStorage.getItem(K.MINIGAMES) || '[]');
+  if (!prev.includes(id)) {
+    prev.push(id);
+    localStorage.setItem(K.MINIGAMES, JSON.stringify(prev));
   }
 }
 

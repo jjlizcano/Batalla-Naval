@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Howl } from 'howler';
+import tetristheme from '../song/tetristheme.mp3';
 import { useGameStore, SCREENS } from '../store/gameStore.js';
 
 // Generate procedural sounds via WebAudio (no external assets needed)
@@ -93,6 +94,7 @@ export function useAudio() {
   const mode = useGameStore(s => s.mode);
   const screen = useGameStore(s => s.screen);
   const oscRef = useRef(null);
+  const howlRef = useRef(null);
 
   // Ambient pad — synthesized, looped
   useEffect(() => {
@@ -146,4 +148,38 @@ export function useAudio() {
       setTimeout(() => oscRef.current && oscRef.current.stop(), 500);
     };
   }, [muted, mode, screen]);
+
+  // Tetris theme: play external tetristheme.mp3 in loop when entering tetris mode
+  useEffect(() => {
+    // stop/unload any existing theme first
+    if (howlRef.current) {
+      try { howlRef.current.stop(); } catch (_) {}
+      try { howlRef.current.unload && howlRef.current.unload(); } catch (_) {}
+      howlRef.current = null;
+    }
+    if (muted) return;
+    if (mode !== 'tetris') return;
+
+    try {
+      const h = new Howl({
+        src: [tetristheme],
+        loop: true,
+        volume: 0.6,
+        html5: true
+      });
+      howlRef.current = h;
+      h.play();
+    } catch (e) {
+      // fail silently if asset not present
+      // console.warn('Tetris theme failed to play', e);
+    }
+
+    return () => {
+      if (howlRef.current) {
+        try { howlRef.current.stop(); } catch (_) {}
+        try { howlRef.current.unload && howlRef.current.unload(); } catch (_) {}
+        howlRef.current = null;
+      }
+    };
+  }, [muted, mode]);
 }

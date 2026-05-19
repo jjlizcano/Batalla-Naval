@@ -5,7 +5,7 @@ import { createAIState, aiChooseShot, aiOnResult, cheaterChooseAbility, DIFFICUL
 import { computeReward, INITIAL_CREDITS } from '../engine/economy.js';
 import { WEATHERS, TURNS_PER_CHANGE, rollWeather, maybeApplyFog } from '../engine/weather.js';
 import { ABILITIES, radarCells, airstrikeCells, torpedoCells } from '../engine/abilities.js';
-import { loadProgression, saveCoins, saveAchievement, unlockSkin, checkAchievements, ACHIEVEMENTS } from '../engine/progression.js';
+import { loadProgression, saveCoins, saveAchievement, unlockSkin, unlockMinigame, checkAchievements, ACHIEVEMENTS } from '../engine/progression.js';
 
 const SCREENS = { MENU: 'menu', SETUP: 'setup', BATTLE: 'battle', END: 'end' };
 export { SCREENS };
@@ -17,8 +17,11 @@ const initialBattleStats = () => ({
   turnCount: 0
 });
 
+const getFirstUnplacedShipUid = (fleet) => fleet.find(ship => ship.cells.length === 0)?.uid ?? null;
+
 const initialState = () => {
   const prog = loadProgression();
+  const initialFleet = getInitialFleet();
   return {
     screen: SCREENS.MENU,
     mode: 'classic',
@@ -29,11 +32,11 @@ const initialState = () => {
     // Boards & fleets
     playerBoard: createBoard(),
     enemyBoard: createBoard(),
-    playerFleet: getInitialFleet(),
+    playerFleet: initialFleet,
     enemyFleet: getInitialFleet(),
 
     // Setup
-    selectedShipUid: null,
+    selectedShipUid: getFirstUnplacedShipUid(initialFleet),
     orientation: 'horizontal',
 
     // Battle
@@ -59,6 +62,7 @@ const initialState = () => {
     // Progression (persisted)
     coins: prog.coins,
     skins: prog.skins,
+    minigames: prog.minigames,
     unlockedAchievements: prog.unlockedAchievements,
 
     // In-battle stats for achievement tracking
@@ -91,6 +95,7 @@ export const useGameStore = create((set, get) => ({
     state.activeSkin = current.activeSkin;
     state.coins = current.coins;
     state.skins = current.skins;
+    state.minigames = current.minigames;
     state.unlockedAchievements = current.unlockedAchievements;
 
     if (mode === 'local2p') {
@@ -101,6 +106,16 @@ export const useGameStore = create((set, get) => ({
       state.local2pAttacker = 'p1';
     } else {
       state.mode = mode;
+    }
+
+    // If entering tetris mode, create fleets using tetris shapes
+    if (state.mode === 'tetris') {
+      state.playerFleet = getInitialFleet('tetris');
+      state.enemyFleet = getInitialFleet('tetris');
+      state.playerBoard = createBoard();
+      state.enemyBoard = createBoard();
+      state.selectedShipUid = getFirstUnplacedShipUid(state.playerFleet);
+      state.orientation = 0;
     }
 
     set(state);
@@ -153,12 +168,13 @@ export const useGameStore = create((set, get) => ({
   // ============ 2P SETUP FLOW ============
   finishSetupP1: () => {
     const s = get();
+    const freshFleet = getInitialFleet(s.mode);
     set({
       p1SetupBoard: s.playerBoard.map(r => [...r]),
       p1SetupFleet: s.playerFleet.map(sh => ({ ...sh, cells: [...sh.cells] })),
       playerBoard: createBoard(),
-      playerFleet: getInitialFleet(),
-      selectedShipUid: null,
+      playerFleet: freshFleet,
+      selectedShipUid: getFirstUnplacedShipUid(freshFleet),
       setupPhase: 'handoff',
       handoffPending: true,
     });
@@ -188,7 +204,13 @@ export const useGameStore = create((set, get) => ({
   // ============ SETUP ============
   selectShip: (uid) => set({ selectedShipUid: uid }),
   setOrientation: (o) => set({ orientation: o }),
-  rotateOrientation: () => set(s => ({ orientation: s.orientation === 'horizontal' ? 'vertical' : 'horizontal' })),
+  rotateOrientation: () => set(s => {
+    if (s.mode === 'tetris') {
+      const cur = typeof s.orientation === 'number' ? s.orientation : 0;
+      return { orientation: (cur + 90) % 360 };
+    }
+    return { orientation: s.orientation === 'horizontal' ? 'vertical' : 'horizontal' };
+  }),
 
   tryPlaceSelected: (x, y) => {
     const { selectedShipUid, playerFleet, playerBoard, orientation } = get();
@@ -196,18 +218,24 @@ export const useGameStore = create((set, get) => ({
     const ship = playerFleet.find(s => s.uid === selectedShipUid);
     if (!ship || ship.cells.length > 0) return false;
     const board = playerBoard.map(r => [...r]);
-    if (!canPlace(board, x, y, ship.size, orientation)) return false;
+    if (!canPlace(board, x, y, ship.size, orientation, ship.shape || null)) return false;
     placeShip(board, ship, x, y, orientation);
-    set({ playerBoard: board, selectedShipUid: null });
+    const nextSelectedShipUid = getFirstUnplacedShipUid(playerFleet);
+    set({ playerBoard: board, selectedShipUid: nextSelectedShipUid });
     return true;
   },
 
-  clearPlacements: () => set({ playerBoard: createBoard(), playerFleet: getInitialFleet(), selectedShipUid: null }),
+  clearPlacements: () => {
+    const s = get();
+    const freshFleet = getInitialFleet(s.mode);
+    set({ playerBoard: createBoard(), playerFleet: freshFleet, selectedShipUid: getFirstUnplacedShipUid(freshFleet) });
+  },
 
   randomizePlayer: () => {
-    const fleet = getInitialFleet();
+    const s = get();
+    const fleet = getInitialFleet(s.mode);
     const board = randomPlacement(fleet);
-    set({ playerBoard: board, playerFleet: fleet, selectedShipUid: null });
+    set({ playerBoard: board, playerFleet: fleet, selectedShipUid: getFirstUnplacedShipUid(fleet) });
   },
 
   allPlaced: () => get().playerFleet.every(s => s.cells.length > 0),
@@ -508,5 +536,29 @@ export const useGameStore = create((set, get) => ({
       skins: s.skins.map(sk => sk.id === id ? { ...sk, unlocked: true } : sk)
     });
     return true;
+  },
+
+  buyMinigame: (id) => {
+    const s = get();
+    const minigame = s.minigames?.find(mg => mg.id === id);
+    if (!minigame || minigame.unlocked || s.coins < minigame.price) return false;
+    const newCoins = s.coins - minigame.price;
+    saveCoins(newCoins);
+    unlockMinigame(id);
+    set({
+      coins: newCoins,
+      minigames: s.minigames.map(mg => mg.id === id ? { ...mg, unlocked: true } : mg)
+    });
+    return true;
+  }
+
+  ,setCoins: (amount, showToast = true) => {
+    const val = Math.max(0, Math.floor(Number(amount) || 0));
+    saveCoins(val);
+    set({ coins: val });
+    if (showToast) {
+      // small system event so the UI shows feedback
+      get().pushEvent(`Monedas establecidas: ${val}`, 'system');
+    }
   }
 }));

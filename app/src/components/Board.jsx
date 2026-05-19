@@ -11,15 +11,16 @@ export default function Board({
   abilityPreview = null,
   radarReveals = [],
   shaking = false,
-  className = ''
+  className = '',
+  overlay = null
 }) {
   const [hover, setHover] = useState(null);
 
   const previewCells = useMemo(() => {
     if (!placementPreview || !hover) return null;
-    const { size, orientation } = placementPreview;
-    const cells = getShipCells(hover.x, hover.y, size, orientation);
-    const valid = canPlace(board, hover.x, hover.y, size, orientation);
+    const { size, orientation, shape } = placementPreview;
+    const cells = getShipCells(hover.x, hover.y, size, orientation, shape || null);
+    const valid = canPlace(board, hover.x, hover.y, size, orientation, shape || null);
     return { cells, valid };
   }, [placementPreview, hover, board]);
 
@@ -92,6 +93,8 @@ export default function Board({
 
           {/* Ship silhouette overlay */}
           <ShipLayer fleet={fleet} isOwn={isOwn} />
+
+          {overlay}
         </div>
       </div>
     </div>

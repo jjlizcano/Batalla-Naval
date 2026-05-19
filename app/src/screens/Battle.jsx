@@ -41,9 +41,12 @@ export default function Battle() {
 
   const [airstrikeDir, setAirstrikeDir] = useState('horizontal');
   const [hoverEnemy, setHoverEnemy]     = useState(null);
+  const [tetrisCol, setTetrisCol]       = useState(null);
+  const [tetrisRow, setTetrisRow]       = useState(0);
   const [shakePlayer, setShakePlayer]   = useState(false);
   const [shakeEnemy, setShakeEnemy]     = useState(false);
   const [zoomEnemy, setZoomEnemy]       = useState(false);
+  const tetrisFallRef = useRef(null);
 
   const playerBoardRef = useRef(null);
   const enemyBoardRef  = useRef(null);
@@ -79,9 +82,53 @@ export default function Battle() {
     }
   }, [zoomTarget]);
 
+  useEffect(() => {
+    if (mode !== 'tetris' || turn !== 'player') {
+      setTetrisCol(null);
+      setTetrisRow(0);
+      if (tetrisFallRef.current) {
+        clearInterval(tetrisFallRef.current);
+        tetrisFallRef.current = null;
+      }
+      return;
+    }
+
+    if (hoverEnemy && typeof hoverEnemy.y === 'number') {
+      setTetrisCol(hoverEnemy.y);
+    } else {
+      setTetrisCol(null);
+    }
+  }, [mode, turn, hoverEnemy]);
+
+  useEffect(() => {
+    if (mode !== 'tetris' || turn !== 'player' || tetrisCol === null) {
+      if (tetrisFallRef.current) {
+        clearInterval(tetrisFallRef.current);
+        tetrisFallRef.current = null;
+      }
+      return;
+    }
+
+    if (tetrisFallRef.current) clearInterval(tetrisFallRef.current);
+    tetrisFallRef.current = setInterval(() => {
+      setTetrisRow(r => (r >= 9 ? 0 : r + 1));
+    }, 170);
+
+    return () => {
+      if (tetrisFallRef.current) {
+        clearInterval(tetrisFallRef.current);
+        tetrisFallRef.current = null;
+      }
+    };
+  }, [mode, turn, tetrisCol]);
+
   const handleEnemyClick = (x, y) => {
     if (turn !== 'player') return;
     playFx('shoot');
+    if (mode === 'tetris' && tetrisCol !== null) {
+      playerShoot(tetrisRow, tetrisCol);
+      return;
+    }
     if (activeAbility) useAbilityAt(x, y, airstrikeDir);
     else playerShoot(x, y);
   };
@@ -118,10 +165,9 @@ export default function Battle() {
         <div className={`flex-1 flex flex-col items-center ${playerBoardClass}`}>
           <div className="title text-base mb-1 opacity-75">{ownLabel}</div>
           <div className={`relative ${skinClass} w-full`} ref={playerBoardRef}>
-            <Board board={playerBoard} fleet={playerFleet} isOwn shaking={shakePlayer} />
+            <Board board={playerBoard} fleet={playerFleet} isOwn shaking={shakePlayer} overlay={<BurstLayer side="player" anims={shotAnims} onDone={consumeAnim} />} />
             <RadarSweep mode={mode} />
             <WaterTrail containerRef={playerBoardRef} />
-            <BurstLayer side="player" anims={shotAnims} onDone={consumeAnim} />
           </div>
         </div>
 
@@ -161,10 +207,18 @@ export default function Battle() {
                 abilityPreview={abilityPreview}
                 radarReveals={radarReveals}
                 shaking={shakeEnemy}
+                className={mode === 'tetris' ? 'board-tetris' : ''}
+                overlay={(
+                  <>
+                    <BurstLayer side="enemy" anims={shotAnims} onDone={consumeAnim} />
+                    {mode === 'tetris' && turn === 'player' && tetrisCol !== null && (
+                      <TetrisAimOverlay row={tetrisRow} col={tetrisCol} />
+                    )}
+                  </>
+                )}
               />
             </EnemyBoardWrapper>
             <WaterTrail containerRef={enemyBoardRef} />
-            <BurstLayer side="enemy" anims={shotAnims} onDone={consumeAnim} />
           </motion.div>
           {activeAbility && (
             <motion.div initial={{ y: 5, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
@@ -191,17 +245,19 @@ export default function Battle() {
     </div>
   );
 }
-
 function EnemyBoardWrapper({ children, onHover }) {
   return (
-    <div onMouseMove={(e) => {
-      const t = e.target;
-      if (t?.classList?.contains('grid-cell')) {
-        const allCells = t.parentElement.children;
-        const idx = Array.from(allCells).indexOf(t);
-        if (idx >= 0) onHover({ x: Math.floor(idx / 10), y: idx % 10 });
-      }
-    }}>
+    <div
+      onMouseMove={(e) => {
+        const t = e.target;
+        if (t?.classList?.contains('grid-cell')) {
+          const allCells = t.parentElement.children;
+          const idx = Array.from(allCells).indexOf(t);
+          if (idx >= 0) onHover({ x: Math.floor(idx / 10), y: idx % 10 });
+        }
+      }}
+      onMouseLeave={() => onHover(null)}
+    >
       {children}
     </div>
   );
@@ -225,8 +281,7 @@ function BurstLayer({ side, anims, onDone }) {
   const ours = anims.filter(a => a.side === side);
   if (ours.length === 0) return null;
   return (
-    <div className="absolute inset-0 pointer-events-none"
-      style={{ padding: '1.5rem 0 0 1.75rem' }}>
+    <div className="absolute inset-0 pointer-events-none">
       <div className="absolute inset-0 grid"
         style={{ gridTemplateColumns: 'repeat(10, 1fr)', gridTemplateRows: 'repeat(10, 1fr)', gap: '2px', padding: '4px' }}>
         {ours.map(b => (
@@ -235,6 +290,39 @@ function BurstLayer({ side, anims, onDone }) {
             <AnimatedShot b={b} onDone={() => onDone(b.id)} />
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function TetrisAimOverlay({ row, col }) {
+  return (
+    <div
+      className="absolute inset-0 pointer-events-none"
+      style={{ zIndex: 6 }}
+    >
+      <div
+        className="absolute inset-0 grid"
+        style={{
+          gridTemplateColumns: 'repeat(10, 1fr)',
+          gridTemplateRows: 'repeat(10, 1fr)',
+          gap: '2px',
+          padding: '4px'
+        }}
+      >
+        <motion.div
+          key={`${col}-${row}`}
+          className="rounded-[4px]"
+          style={{
+            gridColumn: col + 1,
+            gridRow: row + 1,
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(255,255,255,0.45))',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.65), 0 0 14px rgba(255,255,255,0.95), inset 0 0 8px rgba(255,255,255,0.45)'
+          }}
+          initial={{ scale: 0.6, opacity: 0.2 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.12, ease: 'easeOut' }}
+        />
       </div>
     </div>
   );
