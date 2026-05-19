@@ -1,7 +1,4 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "env": {
-    "VITE_SOMEVAR": "@some_secret_name"
-  }
+  "outputDirectory": "dist"
 }
